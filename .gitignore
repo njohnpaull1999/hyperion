@@ -1,0 +1,39 @@
+# Make me a general gitignore for a django project
+# Created by: codegpt
+# Created on: 2021-08-15
+# Updated on: 2021-08-15
+# Updated by: codegpt
+
+# Ignore the virtual environment
+.venv/
+
+# Ignore the database
+db.sqlite3
+
+# Ignore the static files
+staticfiles/
+
+# Ignore the media files
+media/
+
+# Ignore the logs
+*.log
+
+# Ignore the secret key
+*.key
+
+# Ignore the secret settings
+*.settings
+
+# Ignore the secret credentials
+*.credentials
+
+# Ignore the secret tokens
+*.tokens
+
+# Ignore the secret passwords
+*.passwords
+
+# Ignore the secret API keys
+.env
+.codegpt
