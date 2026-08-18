@@ -263,6 +263,11 @@
   var OWNED_FOOD = 5;          // food items each player owns per round
   var TARGET_ROUNDS = 3;       // golds needed to win the match
   var IMMUNE_TICKS = 12;       // respawn protection, in ticks
+  // Two long snakes can circle each other forever without either reaching the
+  // gold, so a round cannot be allowed to run indefinitely. A typical round
+  // resolves in well under a hundred ticks; this is a backstop, not a clock to
+  // play against.
+  var ROUND_LIMIT_TICKS = 450;
   var BASE_DELAY_MS = 130;
   var MIN_DELAY_MS = 70;
   var ROUND_SPEEDUP_MS = 10;
@@ -398,6 +403,7 @@
       snake.eaten = 0;
     });
     match.gold = null;
+    match.roundStartTick = match.tick;
     match.snakes.forEach(function (snake, index) { placeOwnedFood(match, index, OWNED_FOOD); });
   }
 
@@ -420,6 +426,8 @@
       biasPerPoint: options.biasPerPoint === undefined ? 0.5 : options.biasPerPoint,
       difficulty: options.difficulty || "normal",
       tick: 0,
+      roundStartTick: 0,
+      roundLimit: options.roundLimit === undefined ? ROUND_LIMIT_TICKS : options.roundLimit,
       over: false,
       winner: null,
       events: []
@@ -516,7 +524,9 @@
 
       var foodIndex = -1;
       snake.food.forEach(function (cell, i) { if (sameCell(cell, head)) foodIndex = i; });
-      var takesGold = match.gold && sameCell(match.gold, head);
+      // Only a player who has cleared their five may take the gold. Without
+      // this, ignoring your own food and camping the middle is the best play.
+      var takesGold = !!match.gold && sameCell(match.gold, head) && ready(snake);
 
       snake.growing = foodIndex >= 0 || takesGold;
       if (foodIndex >= 0) {
@@ -605,6 +615,32 @@
       if (snake.immune > 0) snake.immune--;
       delete snake.growing;
     });
+
+    // A round that overruns is decided on progress rather than left to circle.
+    if (!match.over && match.tick - match.roundStartTick >= match.roundLimit) {
+      var a = match.snakes[0], b = match.snakes[1];
+      var leader = null;
+      if (a.eaten !== b.eaten) leader = a.eaten > b.eaten ? 0 : 1;
+      else if (a.body.length !== b.body.length) leader = a.body.length > b.body.length ? 0 : 1;
+      else if (a.score !== b.score) leader = a.score < b.score ? 0 : 1;   // trailing player
+
+      if (leader === null) {
+        // Dead level on every measure: restart the round rather than invent a
+        // winner. A fresh board almost always breaks the symmetry.
+        match.events.push({ type: "roundExpired", player: null });
+        startRound(match);
+      } else {
+        match.snakes[leader].score++;
+        match.events.push({ type: "roundExpired", player: leader });
+        if (match.snakes[leader].score >= match.target) {
+          match.over = true;
+          match.winner = leader;
+        } else {
+          match.round++;
+          startRound(match);
+        }
+      }
+    }
 
     // The gold arrives once someone is ready for it.
     if (!match.over && !match.gold) {
@@ -708,12 +744,11 @@
     if (!options.length) return null;   // doomed; keep going and die honestly
 
     options.forEach(function (option) {
-      var after = new Set(blocked);
-      after.add(key(option.cell));
-
-      option.space = rung >= 2 ? floodFill(after, option.cell) : Infinity;
+      // Flood fill starts from the cell the head is moving into, so that cell
+      // must stay free in the blocked set or the count is always zero.
+      option.space = rung >= 2 ? floodFill(blocked, option.cell) : Infinity;
       option.tailOpen = rung >= 3
-        ? reachable(after, option.cell, snake.body[snake.body.length - 1])
+        ? reachable(blocked, option.cell, snake.body[snake.body.length - 1])
         : true;
       option.risky = rung >= 4 && contested.has(key(option.cell)) && !winsHeadOn;
       option.aggressive = rung >= 4 && contested.has(key(option.cell)) && winsHeadOn;
@@ -730,21 +765,31 @@
     var tailSafe = roomy.filter(function (o) { return o.tailOpen; });
     if (!tailSafe.length) tailSafe = roomy;
 
+    var straight = snake.direction;
     tailSafe.sort(function (a, b) {
       // Cutting the opponent off is worth more than a step toward food.
       if (a.aggressive !== b.aggressive) return a.aggressive ? -1 : 1;
       if (a.distance !== b.distance) return a.distance - b.distance;
-      return b.space - a.space;
+      if (a.space !== b.space) return b.space - a.space;
+      // Genuine ties go to carrying straight on. Anything that resolves them
+      // by a fixed compass order (preferring LEFT, say) is not symmetric under
+      // mirroring the board, and hands the player who starts on one side a
+      // measurable edge.
+      var aStraight = a.direction.x === straight.x && a.direction.y === straight.y;
+      var bStraight = b.direction.x === straight.x && b.direction.y === straight.y;
+      if (aStraight !== bStraight) return aStraight ? -1 : 1;
+      return 0;
     });
 
     return tailSafe[0].direction;
   }
 
-  var REACTION_TICKS = { easy: 2, normal: 1, hard: 0 };
-
+  // The bot decides every tick. An earlier version skipped ticks to simulate a
+  // slower reaction, but a skipped tick means coasting straight on: the bot
+  // overshot its target, steered back, overshot again, and orbited food
+  // forever without ever reaching it. Difficulty is which rung of knowledge
+  // the bot uses, nothing else.
   function driveBot(match, index) {
-    var delay = REACTION_TICKS[match.difficulty];
-    if (delay && match.tick % (delay + 1) !== 0) return;
     var direction = botDecide(match, index);
     if (direction) queueTurn(match.snakes[index], direction);
   }
@@ -757,7 +802,8 @@
     ready: ready, sameCell: sameCell, manhattan: manhattan,
     UP: UP, DOWN: DOWN, LEFT: LEFT, RIGHT: RIGHT,
     WIDTH: WIDTH, HEIGHT: HEIGHT, START_LENGTH: START_LENGTH,
-    OWNED_FOOD: OWNED_FOOD, IMMUNE_TICKS: IMMUNE_TICKS
+    OWNED_FOOD: OWNED_FOOD, IMMUNE_TICKS: IMMUNE_TICKS,
+    ROUND_LIMIT_TICKS: ROUND_LIMIT_TICKS
   };
 
   // ------------------------------------------------------------------
@@ -924,7 +970,14 @@
 
   function renderStatus() {
     if (!match) return;
-    els.round.textContent = "Round " + match.round + " · first to " + match.target;
+    var label = "Round " + match.round + " · first to " + match.target;
+    // The clock is a backstop, not something to play against, so it only
+    // appears once a round is running long enough for it to be in play.
+    var left = match.roundLimit - (match.tick - match.roundStartTick);
+    if (left <= match.roundLimit * 0.35) {
+      label += " · " + Math.max(0, Math.ceil(left * delayMs() / 1000)) + "s left";
+    }
+    els.round.textContent = label;
     match.snakes.forEach(function (snake, index) {
       els.score[index].textContent = snake.score;
       els.len[index].textContent = "len " + snake.body.length;
@@ -954,6 +1007,10 @@
       if (event.type === "goldSpawned") showBanner("Gold food — go", true);
       else if (event.type === "gold") showBanner((event.player === 0 ? "You take" : "Bot takes") + " the round", true);
       else if (event.type === "eliminated") showBanner(event.player === 0 ? "You are out" : "Bot is out", false);
+      else if (event.type === "roundExpired") {
+        showBanner(event.player === null ? "Round drawn"
+          : (event.player === 0 ? "Round to you on time" : "Round to the bot on time"), true);
+      }
     });
     if (els.banner.hidden === false && match.tick > bannerUntil) els.banner.hidden = true;
   }

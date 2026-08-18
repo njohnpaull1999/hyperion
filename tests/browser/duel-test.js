@@ -453,5 +453,145 @@ test('seeded bot-versus-bot matches finish with every invariant intact', () => {
   console.log('        (' + finished + '/15 matches finished, ' + ticks + ' ticks simulated)');
 });
 
+
+// ------------------------------------------- regressions found by play-testing
+
+test('a player who has not cleared their five cannot take the gold', () => {
+  // Otherwise the best strategy is to ignore your own food, camp the middle,
+  // and snipe the gold the moment your opponent finishes farming.
+  const m = scenario(E, {
+    snakes: [
+      { body: [[9, 10], [8, 10], [7, 10]], direction: RIGHT, eaten: 0, food: [] },
+      { body: [[20, 15], [21, 15], [22, 15]], direction: LEFT, eaten: 5, food: [] },
+    ],
+    gold: [10, 10],
+  });
+  E.stepMatch(m);
+  assert.strictEqual(m.snakes[0].score, 0, 'a non-ready player must not score');
+  assert.ok(m.gold, 'the gold must still be there');
+  assert.strictEqual(m.snakes[0].body.length, 3, 'and must not have fed them');
+  assert.strictEqual(m.snakes[0].deaths, 0, 'passing over it is harmless');
+});
+
+test('flood fill measures the space actually reachable', () => {
+  assert.strictEqual(E.floodFill(new Set(), { x: 5, y: 5 }), 30 * 20, 'empty board');
+  // Wall off a 3x20 column on the left: x=3 blocked for every row.
+  const wall = new Set();
+  for (let y = 0; y < 20; y++) wall.add(y * 30 + 3);
+  assert.strictEqual(E.floodFill(wall, { x: 0, y: 0 }), 3 * 20, 'sealed pocket');
+  assert.strictEqual(E.floodFill(wall, { x: 4, y: 0 }), 26 * 20, 'the larger side');
+});
+
+test('a space-aware bot refuses a dead end that a greedy one walks into', () => {
+  // (16,10) is a one-cell pocket: its other three neighbours are blocked, and
+  // the food sits straight beyond it. Greedy takes the bait; rung 2 and up
+  // should not.
+  //
+  // The blocker's head and tail are parked far away on purpose. A tail cell
+  // vacates as that snake moves, so the engine rightly treats it as free --
+  // sealing the pocket with one would not seal it at all. Keeping the head
+  // away also stops the hard rung refusing the cell merely for being next to
+  // an opponent's head, which would pass this test for the wrong reason.
+  function decide(difficulty) {
+    const m = scenario(E, {
+      snakes: [
+        { body: [[20, 2], [21, 2], [22, 2]], direction: RIGHT },
+        { body: [[15, 10], [14, 10], [13, 10]], direction: RIGHT, food: [[17, 10]] },
+      ],
+    });
+    m.snakes[0].body = [
+      { x: 20, y: 2 },                                        // head, far away
+      { x: 17, y: 10 }, { x: 16, y: 11 }, { x: 16, y: 9 },    // the three walls
+      { x: 21, y: 2 },                                        // tail, far away
+    ];
+    m.difficulty = difficulty;
+    return E.botDecide(m, 1);
+  }
+  const greedy = decide('easy');
+  assert.deepStrictEqual({ x: greedy.x, y: greedy.y }, { x: 1, y: 0 },
+    'the greedy rung should take the bait');
+  ['normal', 'hard'].forEach((d) => {
+    const choice = decide(d);
+    assert.ok(!(choice.x === 1 && choice.y === 0),
+      d + ' walked into the dead end, so its space check is not working');
+  });
+});
+
+test('the bot plays the same on a mirrored board', () => {
+  // A tie broken by a fixed compass order is not symmetric under mirroring,
+  // and quietly hands the player starting on one side a real advantage.
+  const layout = {
+    snakes: [
+      { body: [[6, 10], [5, 10], [4, 10]], direction: RIGHT, food: [[9, 4], [12, 14], [2, 8]] },
+      { body: [[23, 10], [24, 10], [25, 10]], direction: LEFT, food: [[20, 4], [17, 14], [27, 8]] },
+    ],
+  };
+  const mirrorCell = (c) => [29 - c[0], c[1]];
+  const mirrorDir = (d) => ({ x: -d.x, y: d.y });
+  const mirrored = {
+    snakes: [
+      { body: layout.snakes[1].body.map(mirrorCell), direction: mirrorDir(layout.snakes[1].direction),
+        food: layout.snakes[1].food.map(mirrorCell) },
+      { body: layout.snakes[0].body.map(mirrorCell), direction: mirrorDir(layout.snakes[0].direction),
+        food: layout.snakes[0].food.map(mirrorCell) },
+    ],
+  };
+  ['easy', 'normal', 'hard'].forEach((difficulty) => {
+    const a = scenario(E, layout); a.difficulty = difficulty;
+    const b = scenario(E, mirrored); b.difficulty = difficulty;
+    const choice = E.botDecide(a, 0);
+    const mirroredChoice = E.botDecide(b, 1);
+    assert.deepStrictEqual(
+      // `|| 0` because negating zero gives -0, which deepStrictEqual rejects.
+      { x: mirroredChoice.x || 0, y: mirroredChoice.y || 0 },
+      { x: -choice.x || 0, y: choice.y || 0 },
+      difficulty + ': the bot does not play symmetrically, so one side has an edge'
+    );
+  });
+});
+
+test('every difficulty can finish a match', () => {
+  // The regression for a bot that orbited its target forever: it only showed
+  // up on the settings the original suite never played.
+  ['easy', 'normal', 'hard'].forEach((difficulty) => {
+    let finished = 0;
+    for (let seed = 1; seed <= 4; seed++) {
+      const m = E.createMatch({ seed, difficulty });
+      for (let i = 0; i < 3000 && !m.over; i++) { E.driveBot(m, 0); E.driveBot(m, 1); E.stepMatch(m); }
+      if (m.over) finished++;
+    }
+    assert.strictEqual(finished, 4, difficulty + ' finished only ' + finished + '/4 matches');
+  });
+});
+
+test('a round that overruns is decided rather than left to circle', () => {
+  // Two long snakes can loop around each other indefinitely with the gold
+  // untouched, so the round needs a backstop.
+  // Nobody is driven, so both run straight; they start with more than 20 cells
+  // of clear space ahead. Food is cleared so the counts cannot drift, and
+  // neither snake may die -- a respawn would reset `eaten` and void the test.
+  const m = E.createMatch({ seed: 5, roundLimit: 20 });
+  // Different rows: the default start has them facing each other down row 10,
+  // where they meet head-on well inside the window.
+  m.snakes[0].body = [{ x: 4, y: 3 }, { x: 3, y: 3 }, { x: 2, y: 3 }];
+  m.snakes[0].direction = RIGHT;
+  m.snakes[1].body = [{ x: 25, y: 16 }, { x: 26, y: 16 }, { x: 27, y: 16 }];
+  m.snakes[1].direction = LEFT;
+  m.snakes.forEach((s) => { s.food = []; });
+  m.snakes[0].eaten = 3;
+  m.snakes[1].eaten = 1;
+  for (let i = 0; i < 20; i++) E.stepMatch(m);
+  assert.deepStrictEqual(deaths(m), [0, 0], 'neither snake should have died first');
+  assert.strictEqual(m.snakes[0].score, 1, 'the player who had eaten more should take it');
+  assert.strictEqual(m.round, 2, 'and a new round should have begun');
+});
+
+test('the round clock breaks a genuine stalemate', () => {
+  const m = E.createMatch({ seed: 7, difficulty: 'hard' });
+  let ticks = 0;
+  while (!m.over && ticks < 4000) { E.driveBot(m, 0); E.driveBot(m, 1); E.stepMatch(m); ticks++; }
+  assert.ok(m.over, 'seed 7 used to circle forever; it must now resolve');
+});
+
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);

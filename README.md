@@ -55,10 +55,13 @@ First to three rounds wins the match.
   protection, your progress for the round resets, and your next five food items
   are placed closer to you the further behind you are. That bias never applies to
   the gold.
-- The bot has three settings. They differ in how much it knows — whether it
+- **A round has a time limit.** Two long snakes can circle each other forever
+  with the gold untouched, so an overrunning round is awarded on progress:
+  most food eaten, then greatest length, then to whoever is behind on score. In
+  practice it settles fewer than one round in twenty.
+- The bot has three settings. They differ only in how much it knows — whether it
   checks the space a move leads into, whether it keeps a route back to its own
-  tail, and whether it plays the head-on rule against you — not in how often it
-  throws a move away.
+  tail, and whether it plays the head-on rule against you.
 
 Both snakes move on the same tick, and collisions are judged only after both
 heads have moved. Resolving them one snake at a time would quietly favour
