@@ -1,0 +1,31 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  python:
+    name: terminal game
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run the rule tests
+        run: python -m unittest discover -s tests -v
+      - name: Check the game compiles
+        run: python -m compileall -q games/snake.py
+
+  browser:
+    name: browser port
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Run the rule tests
+        run: node tests/browser/test.js

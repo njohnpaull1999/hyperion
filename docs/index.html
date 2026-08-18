@@ -6,6 +6,21 @@
 <title>Snake</title>
 <meta name="description" content="A browser port of the terminal Snake game in this repository.">
 <meta name="color-scheme" content="dark">
+
+<!-- Inline SVG favicon: a snake segment and its food, so no extra file ships. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f1117'/%3E%3Crect x='4' y='13' width='7' height='7' rx='2' fill='%2335c88a'/%3E%3Crect x='12' y='13' width='7' height='7' rx='2' fill='%236ee7a8'/%3E%3Ccircle cx='25' cy='16' r='3.2' fill='%23f0616d'/%3E%3C/svg%3E">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Snake">
+<meta property="og:description" content="A browser port of a terminal Snake game. Arrows or WASD to steer.">
+<meta property="og:url" content="https://njohnpaull1999.github.io/hyperion/">
+<meta property="og:image" content="https://njohnpaull1999.github.io/hyperion/preview.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Snake">
+<meta name="twitter:description" content="A browser port of a terminal Snake game. Arrows or WASD to steer.">
+<meta name="twitter:image" content="https://njohnpaull1999.github.io/hyperion/preview.png">
 <style>
   :root {
     --bg: #0f1117;
@@ -217,6 +232,19 @@
   var overlayText = document.getElementById("overlay-text");
   var overlayButton = document.getElementById("overlay-button");
 
+  // The stylesheet above owns every colour; the canvas reads it back so the
+  // palette is declared exactly once. Cached because getComputedStyle is slow
+  // to call per frame, and refreshed on resize.
+  var PALETTE_KEYS = ["panel", "grid", "head", "body", "food", "bg", "text"];
+  var palette = {};
+
+  function readPalette() {
+    var styles = getComputedStyle(document.body);
+    PALETTE_KEYS.forEach(function (name) {
+      palette[name] = styles.getPropertyValue("--" + name).trim();
+    });
+  }
+
   var cell = 16;          // canvas pixels per board cell, set by resize()
   var game = null;
   var running = false;    // false before the first game and after a loss
@@ -339,6 +367,7 @@
   }
 
   function resize() {
+    readPalette();
     var stageWidth = canvas.parentElement.clientWidth;
     // Whole-pixel cells keep the grid crisp; 8px floor stops it vanishing.
     cell = Math.max(8, Math.floor(stageWidth / BOARD_WIDTH));
@@ -375,10 +404,10 @@
     var w = cell * BOARD_WIDTH;
     var h = cell * BOARD_HEIGHT;
 
-    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--panel").trim() || "#161923";
+    ctx.fillStyle = palette.panel;
     ctx.fillRect(0, 0, w, h);
 
-    ctx.strokeStyle = "#1b1f2b";
+    ctx.strokeStyle = palette.grid;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (var x = 1; x < BOARD_WIDTH; x++) {
@@ -394,7 +423,7 @@
     if (!game) return;
 
     if (game.food) {
-      ctx.fillStyle = "#f0616d";
+      ctx.fillStyle = palette.food;
       var pad = Math.max(2, cell * 0.22);
       roundedRect(
         game.food.x * cell + pad, game.food.y * cell + pad,
@@ -405,7 +434,7 @@
     var inset = Math.max(1, Math.floor(cell * 0.08));
     for (var i = game.body.length - 1; i >= 0; i--) {
       var seg = game.body[i];
-      ctx.fillStyle = i === 0 ? "#6ee7a8" : "#35c88a";
+      ctx.fillStyle = i === 0 ? palette.head : palette.body;
       roundedRect(
         seg.x * cell + inset, seg.y * cell + inset,
         cell - inset * 2, cell - inset * 2,
@@ -425,7 +454,7 @@
       var ay = game.direction.x === 0 ? 0 : off;
       var fx = game.direction.x * off * 0.6;
       var fy = game.direction.y * off * 0.6;
-      ctx.fillStyle = "#0f1117";
+      ctx.fillStyle = palette.bg;
       ctx.beginPath();
       ctx.arc(cx + fx + ax, cy + fy + ay, eye, 0, Math.PI * 2);
       ctx.arc(cx + fx - ax, cy + fy - ay, eye, 0, Math.PI * 2);
@@ -447,7 +476,7 @@
       var plateH = size * 2;
       ctx.fillStyle = "rgba(15, 17, 23, 0.92)";
       roundedRect((w - plateW) / 2, (h - plateH) / 2, plateW, plateH, 8);
-      ctx.fillStyle = "#e6e9f0";
+      ctx.fillStyle = palette.text;
       ctx.fillText(label, w / 2, h / 2);
     }
   }
