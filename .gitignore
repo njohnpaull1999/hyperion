@@ -37,3 +37,6 @@ media/
 # Ignore the secret API keys
 .env
 .codegpt
+# Ignore Python bytecode
+__pycache__/
+*.py[cod]
