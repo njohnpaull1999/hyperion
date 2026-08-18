@@ -8,6 +8,7 @@ A Django project, plus a Snake game that comes in two versions.
 | --- | --- |
 | `games/snake.py` | Snake for the terminal, written against `curses` |
 | `docs/index.html` | The same game on a canvas, served by GitHub Pages |
+| `docs/duel.html` | Two-player duel against a local bot |
 | `tests/` | Rule tests for both versions |
 | `hyperion-app/` | The Django project |
 
@@ -37,6 +38,32 @@ workflow: pushing to `master` publishes it.
 Same controls, plus swipe to steer and tap to pause on a touchscreen. Your best
 score is kept in the browser.
 
+## Snake Duel
+
+[`docs/duel.html`](docs/duel.html) is a one-on-one match against a bot, on the
+same board, with no server involved.
+
+Each player owns five food items, tinted to their colour, and can only eat their
+own. Clear your five and a single gold food appears; taking it wins the round.
+First to three rounds wins the match.
+
+- **Move into the other snake and you are out.** The snake you hit is unharmed.
+- **Head-on, the longer snake survives.** Equal lengths eliminate both. Length is
+  measured after that tick's growth, so eating as you collide can win the duel —
+  which is why both lengths are always on screen.
+- **Losing does not end the match.** You respawn at starting size with brief
+  protection, your progress for the round resets, and your next five food items
+  are placed closer to you the further behind you are. That bias never applies to
+  the gold.
+- The bot has three settings. They differ in how much it knows — whether it
+  checks the space a move leads into, whether it keeps a route back to its own
+  tail, and whether it plays the head-on rule against you — not in how often it
+  throws a move away.
+
+Both snakes move on the same tick, and collisions are judged only after both
+heads have moved. Resolving them one snake at a time would quietly favour
+whichever snake was processed first.
+
 ## The rules, in both versions
 
 Both versions implement the same game:
@@ -55,9 +82,16 @@ They are separate implementations, so a change to one is a change to both.
 ```bash
 python3 -m unittest discover -s tests -v   # terminal version
 node tests/browser/test.js                 # browser version
+node tests/browser/duel-test.js            # duel
 ```
 
 Neither needs anything installed. Both run in CI on every push and pull request.
+
+The duel suite drives the rules engine that `docs/duel.html` exposes on
+`window`, so scenarios that only happen on a single tick — a head-on at equal
+length, an opponent's tail that is growing rather than moving — can be set up
+directly. It also plays fifteen seeded bot-versus-bot matches to a winner,
+checking every invariant on every tick.
 
 The browser suite is worth a note: it extracts the real `<script>` from
 `docs/index.html` and runs it against DOM stubs, with the canvas stub recording

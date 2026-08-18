@@ -27,5 +27,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Run the rule tests
+      - name: Run the single-player rule tests
         run: node tests/browser/test.js
+      - name: Run the duel rule tests
+        run: node tests/browser/duel-test.js

@@ -1,0 +1,1065 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snake Duel</title>
+<meta name="description" content="Local human versus bot Snake. Farm your five, then fight for the gold.">
+<meta name="color-scheme" content="dark">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230f1117'/%3E%3Crect x='4' y='13' width='7' height='7' rx='2' fill='%2335c88a'/%3E%3Crect x='21' y='13' width='7' height='7' rx='2' fill='%235b9cf0'/%3E%3Ccircle cx='16' cy='16' r='3' fill='%23f2c14e'/%3E%3C/svg%3E">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Snake Duel">
+<meta property="og:description" content="Local human versus bot Snake. Farm your five, then fight for the gold.">
+<meta property="og:url" content="https://njohnpaull1999.github.io/hyperion/duel.html">
+<meta property="og:image" content="https://njohnpaull1999.github.io/hyperion/preview.png">
+<meta name="twitter:card" content="summary_large_image">
+
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #161923;
+    --line: #242938;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --grid: #1b1f2b;
+
+    /* Green against blue, never green against red: the two players must stay
+       distinguishable for the most common form of colour blindness. */
+    --p0-head: #6ee7a8;
+    --p0-body: #35c88a;
+    --p0-food: #1f7d5a;
+    --p1-head: #8fbcff;
+    --p1-body: #5b9cf0;
+    --p1-food: #2f5d9e;
+    --gold: #f2c14e;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { margin: 0; height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right))
+             max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left));
+    overscroll-behavior: none;
+  }
+
+  .wrap { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 10px; }
+
+  header { display: flex; align-items: baseline; gap: 12px; }
+
+  h1 {
+    font-size: 16px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .round { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+  /* Scoreboard: both lengths always visible, since length decides every duel. */
+  .players { display: flex; gap: 10px; }
+
+  .player {
+    flex: 1;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 8px 11px;
+    background: var(--panel);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    border-top: 2px solid var(--pc, var(--line));
+  }
+
+  .player.p0 { --pc: var(--p0-body); }
+  .player.p1 { --pc: var(--p1-body); }
+
+  .player-top { display: flex; align-items: baseline; gap: 8px; }
+
+  .player-name { color: var(--pc); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; font-size: 12px; }
+
+  .player-score { margin-left: auto; font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+  .player-stats { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+
+  .pips { display: flex; gap: 3px; margin-left: auto; }
+
+  .pip { width: 7px; height: 7px; border-radius: 2px; background: var(--line); }
+  .pip.on { background: var(--pc); }
+
+  .len { font-variant-numeric: tabular-nums; }
+  .len.longer { color: var(--text); font-weight: 700; }
+
+  .stage {
+    position: relative;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    overflow: hidden;
+    touch-action: none;
+  }
+
+  canvas { display: block; width: 100%; height: auto; }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+    background: rgba(15, 17, 23, 0.85);
+  }
+
+  .overlay[hidden] { display: none; }
+
+  .overlay h2 { margin: 0; font-size: 20px; letter-spacing: 0.06em; text-transform: uppercase; }
+
+  .overlay p { margin: 0; color: var(--muted); max-width: 40ch; }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+
+  button {
+    font: inherit;
+    color: #0f1117;
+    background: var(--p0-head);
+    border: 0;
+    border-radius: 6px;
+    padding: 9px 18px;
+    cursor: pointer;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+  }
+
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button:hover { filter: brightness(1.1); }
+  button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  .banner {
+    position: absolute;
+    left: 50%;
+    top: 14%;
+    transform: translateX(-50%);
+    background: rgba(15, 17, 23, 0.92);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 7px 15px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .banner[hidden] { display: none; }
+  .banner.gold { color: var(--gold); border-color: var(--gold); }
+
+  footer { color: var(--muted); font-size: 12.5px; text-align: center; line-height: 1.7; }
+
+  footer a { color: var(--p0-body); }
+
+  kbd {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font: inherit;
+    font-size: 11px;
+  }
+
+  .touch-only { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    .touch-only { display: inline; }
+    .keys-only { display: none; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>Snake Duel</h1>
+    <div class="round" id="round">Round 1 &middot; first to 3</div>
+  </header>
+
+  <div class="players">
+    <div class="player p0">
+      <div class="player-top">
+        <span class="player-name">You</span>
+        <span class="player-score" id="score0">0</span>
+      </div>
+      <div class="player-stats">
+        <span class="len" id="len0">len 3</span>
+        <span class="pips" id="pips0"></span>
+      </div>
+    </div>
+    <div class="player p1">
+      <div class="player-top">
+        <span class="player-name">Bot</span>
+        <span class="player-score" id="score1">0</span>
+      </div>
+      <div class="player-stats">
+        <span class="len" id="len1">len 3</span>
+        <span class="pips" id="pips1"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="stage">
+    <canvas id="board"></canvas>
+    <div class="banner" id="banner" hidden></div>
+    <div class="overlay" id="overlay">
+      <h2 id="overlay-title">Snake Duel</h2>
+      <p id="overlay-text">Eat your five, then race the bot for the gold. First to three golds wins.</p>
+      <div class="controls">
+        <button id="play" type="button">Play</button>
+        <button id="difficulty" class="ghost" type="button">Bot: normal</button>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span class="keys-only"><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> &middot; <kbd>P</kbd> pause &middot; <kbd>R</kbd> restart</span>
+    <span class="touch-only">Swipe to steer &middot; tap to pause</span>
+    <br>
+    Hit the bot and you are out &middot; head-on, the longer snake wins &middot;
+    <a href="index.html">single player</a>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------------
+  // Rules engine. No DOM in this section: it is driven directly by the
+  // test suite, and by the renderer below.
+  // ------------------------------------------------------------------
+
+  var WIDTH = 30;
+  var HEIGHT = 20;
+  var START_LENGTH = 3;
+  var OWNED_FOOD = 5;          // food items each player owns per round
+  var TARGET_ROUNDS = 3;       // golds needed to win the match
+  var IMMUNE_TICKS = 12;       // respawn protection, in ticks
+  var BASE_DELAY_MS = 130;
+  var MIN_DELAY_MS = 70;
+  var ROUND_SPEEDUP_MS = 10;
+
+  var UP = { x: 0, y: -1 };
+  var DOWN = { x: 0, y: 1 };
+  var LEFT = { x: -1, y: 0 };
+  var RIGHT = { x: 1, y: 0 };
+  var DIRECTIONS = [UP, DOWN, LEFT, RIGHT];
+
+  // Deterministic RNG so a seed replays a whole match exactly.
+  function makeRng(seed) {
+    var state = (seed >>> 0) || 1;
+    return function () {
+      state ^= state << 13; state >>>= 0;
+      state ^= state >> 17;
+      state ^= state << 5;  state >>>= 0;
+      return state / 4294967296;
+    };
+  }
+
+  function key(cell) { return cell.y * WIDTH + cell.x; }
+  function sameCell(a, b) { return !!a && !!b && a.x === b.x && a.y === b.y; }
+  function inBounds(cell) { return cell.x >= 0 && cell.x < WIDTH && cell.y >= 0 && cell.y < HEIGHT; }
+  function manhattan(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+
+  function makeSnake(id, x, y, facing) {
+    var body = [];
+    for (var i = 0; i < START_LENGTH; i++) {
+      body.push({ x: x - facing.x * i, y: y - facing.y * i });
+    }
+    return {
+      id: id,
+      body: body,
+      direction: facing,
+      pending: [],
+      food: [],          // cells this player, and only this player, can eat
+      eaten: 0,          // owned food eaten this round
+      alive: true,
+      immune: 0,
+      deaths: 0
+    };
+  }
+
+  function occupiedCells(match, options) {
+    var skipTails = options && options.skipTails;
+    var cells = new Set();
+    match.snakes.forEach(function (snake) {
+      if (!snake.alive) return;
+      var last = snake.body.length - 1;
+      snake.body.forEach(function (cell, index) {
+        // A tail that is about to vacate is not an obstacle, unless that
+        // snake is growing this tick.
+        if (skipTails && index === last && !snake.growing) return;
+        cells.add(key(cell));
+      });
+    });
+    return cells;
+  }
+
+  function freeCells(match, extraBlocked) {
+    var blocked = occupiedCells(match);
+    match.snakes.forEach(function (snake) {
+      snake.food.forEach(function (cell) { blocked.add(key(cell)); });
+    });
+    if (match.gold) blocked.add(key(match.gold));
+    (extraBlocked || []).forEach(function (cell) { blocked.add(key(cell)); });
+
+    var free = [];
+    for (var y = 0; y < HEIGHT; y++) {
+      for (var x = 0; x < WIDTH; x++) {
+        if (!blocked.has(y * WIDTH + x)) free.push({ x: x, y: y });
+      }
+    }
+    return free;
+  }
+
+  // Owned food placement, biased toward its owner when they are behind.
+  // Bias moves food closer; it never makes anyone faster, and it never
+  // applies to the gold.
+  function placeOwnedFood(match, index, count) {
+    var snake = match.snakes[index];
+    var other = match.snakes[1 - index];
+    var deficit = Math.max(0, other.score - snake.score);
+    var bias = Math.min(1, deficit * match.biasPerPoint);
+
+    for (var n = 0; n < count; n++) {
+      var free = freeCells(match);
+      if (!free.length) return;
+
+      var chosen;
+      if (bias > 0 && snake.body.length) {
+        var head = snake.body[0];
+        free.sort(function (a, b) { return manhattan(a, head) - manhattan(b, head); });
+        // At full bias only the nearest 40% of the board is eligible.
+        var window = Math.max(1, Math.floor(free.length * (1 - 0.6 * bias)));
+        chosen = free[Math.floor(match.rng() * window)];
+      } else {
+        chosen = free[Math.floor(match.rng() * free.length)];
+      }
+      snake.food.push(chosen);
+    }
+  }
+
+  // The contested food sits between the two heads and is never biased.
+  function placeGold(match) {
+    var free = freeCells(match);
+    if (!free.length) return null;
+
+    var heads = match.snakes.filter(function (s) { return s.alive; }).map(function (s) { return s.body[0]; });
+    if (!heads.length) return free[Math.floor(match.rng() * free.length)];
+
+    var midpoint = {
+      x: Math.round(heads.reduce(function (sum, h) { return sum + h.x; }, 0) / heads.length),
+      y: Math.round(heads.reduce(function (sum, h) { return sum + h.y; }, 0) / heads.length)
+    };
+    // Nearest free cell to the midpoint, so neither player starts closer.
+    var best = free[0];
+    var bestScore = Infinity;
+    free.forEach(function (cell) {
+      var d = manhattan(cell, midpoint);
+      // Break ties by keeping the two walks as equal as possible.
+      var fairness = heads.length === 2 ? Math.abs(manhattan(cell, heads[0]) - manhattan(cell, heads[1])) : 0;
+      var score = d * 2 + fairness;
+      if (score < bestScore) { bestScore = score; best = cell; }
+    });
+    return best;
+  }
+
+  function startRound(match) {
+    match.snakes.forEach(function (snake) {
+      snake.food = [];
+      snake.eaten = 0;
+    });
+    match.gold = null;
+    match.snakes.forEach(function (snake, index) { placeOwnedFood(match, index, OWNED_FOOD); });
+  }
+
+  function createMatch(options) {
+    options = options || {};
+    var match = {
+      width: WIDTH,
+      height: HEIGHT,
+      rng: makeRng(options.seed === undefined ? 1 : options.seed),
+      snakes: [
+        makeSnake(0, 6, Math.floor(HEIGHT / 2), RIGHT),
+        makeSnake(1, WIDTH - 7, Math.floor(HEIGHT / 2), LEFT)
+      ],
+      gold: null,
+      round: 1,
+      target: options.target === undefined ? TARGET_ROUNDS : options.target,
+      // Gold appears as soon as the first player clears their five, which
+      // rewards eating quickly. Set false to make it wait for both.
+      goldOnFirstReady: options.goldOnFirstReady !== false,
+      biasPerPoint: options.biasPerPoint === undefined ? 0.5 : options.biasPerPoint,
+      difficulty: options.difficulty || "normal",
+      tick: 0,
+      over: false,
+      winner: null,
+      events: []
+    };
+    match.snakes.forEach(function (snake) { snake.score = 0; });
+    startRound(match);
+    return match;
+  }
+
+  function queueTurn(snake, direction) {
+    var last = snake.pending.length ? snake.pending[snake.pending.length - 1] : snake.direction;
+    if (direction.x === -last.x && direction.y === -last.y) return;
+    if (direction.x === last.x && direction.y === last.y) return;
+    if (snake.pending.length < 2) snake.pending.push(direction);
+  }
+
+  function ready(snake) { return snake.eaten >= OWNED_FOOD; }
+
+  function findRespawn(match, index) {
+    var other = match.snakes[1 - index];
+    var facing = index === 0 ? RIGHT : LEFT;
+    var blocked = occupiedCells(match);
+    var otherHead = other.alive ? other.body[0] : null;
+
+    var best = null;
+    var bestScore = -Infinity;
+    for (var y = 0; y < HEIGHT; y++) {
+      for (var x = 0; x < WIDTH; x++) {
+        var cells = [];
+        var ok = true;
+        for (var i = 0; i < START_LENGTH; i++) {
+          var cell = { x: x - facing.x * i, y: y - facing.y * i };
+          if (!inBounds(cell) || blocked.has(key(cell))) { ok = false; break; }
+          cells.push(cell);
+        }
+        if (!ok) continue;
+        // The head must have somewhere legal to go on its first tick.
+        var head = { x: x, y: y };
+        var hasExit = DIRECTIONS.some(function (d) {
+          var next = { x: head.x + d.x, y: head.y + d.y };
+          return inBounds(next) && !blocked.has(key(next));
+        });
+        if (!hasExit) continue;
+
+        // Prefer distance from the opponent, so a respawn is not instantly contested.
+        var score = otherHead ? manhattan(head, otherHead) : 0;
+        if (score > bestScore) { bestScore = score; best = cells; }
+      }
+    }
+    return best;
+  }
+
+  function respawn(match, index) {
+    var snake = match.snakes[index];
+    var cells = findRespawn(match, index);
+    if (!cells) return false;          // board too full; try again next tick
+    snake.body = cells;
+    snake.direction = index === 0 ? RIGHT : LEFT;
+    snake.pending = [];
+    snake.alive = true;
+    snake.immune = IMMUNE_TICKS;
+    // Dying costs the round: progress resets and a fresh set of food is
+    // placed, which is where the bias toward the trailing player applies.
+    snake.food = [];
+    snake.eaten = 0;
+    placeOwnedFood(match, index, OWNED_FOOD);
+    return true;
+  }
+
+  function stepMatch(match) {
+    if (match.over) return match;
+    match.events = [];
+    match.tick++;
+
+    var snakes = match.snakes;
+
+    // 1. One queued turn each.
+    snakes.forEach(function (snake) {
+      if (!snake.alive) return;
+      if (snake.pending.length) snake.direction = snake.pending.shift();
+    });
+
+    // 2. New head cells, computed before anything is written.
+    var heads = snakes.map(function (snake) {
+      if (!snake.alive) return null;
+      return { x: snake.body[0].x + snake.direction.x, y: snake.body[0].y + snake.direction.y };
+    });
+
+    // 3. Move both snakes, applying growth. Nothing is judged yet.
+    var ateGold = [false, false];
+    snakes.forEach(function (snake, index) {
+      if (!snake.alive) return;
+      var head = heads[index];
+
+      var foodIndex = -1;
+      snake.food.forEach(function (cell, i) { if (sameCell(cell, head)) foodIndex = i; });
+      var takesGold = match.gold && sameCell(match.gold, head);
+
+      snake.growing = foodIndex >= 0 || takesGold;
+      if (foodIndex >= 0) {
+        snake.food.splice(foodIndex, 1);
+        snake.eaten++;
+      }
+      if (takesGold) ateGold[index] = true;
+
+      snake.body.unshift(head);
+      if (!snake.growing) snake.body.pop();
+    });
+
+    // 4. Judge every elimination against the same post-move snapshot, so the
+    //    result cannot depend on which snake was processed first.
+    var eliminated = [false, false];
+    var headOn = snakes[0].alive && snakes[1].alive && sameCell(heads[0], heads[1]);
+
+    snakes.forEach(function (snake, index) {
+      if (!snake.alive) return;
+      var head = heads[index];
+      var other = snakes[1 - index];
+
+      if (!inBounds(head)) { eliminated[index] = true; return; }
+
+      // Own body, excluding the head itself.
+      for (var i = 1; i < snake.body.length; i++) {
+        if (sameCell(snake.body[i], head)) { eliminated[index] = true; return; }
+      }
+
+      if (other.alive && !headOn) {
+        // Moving into the opponent eliminates the mover, not the opponent.
+        for (var j = 0; j < other.body.length; j++) {
+          if (sameCell(other.body[j], head)) { eliminated[index] = true; return; }
+        }
+      }
+    });
+
+    if (headOn) {
+      var lengthA = snakes[0].body.length;
+      var lengthB = snakes[1].body.length;
+      if (lengthA > lengthB) eliminated[1] = true;
+      else if (lengthB > lengthA) eliminated[0] = true;
+      else { eliminated[0] = true; eliminated[1] = true; }
+      match.events.push({ type: "headOn", lengths: [lengthA, lengthB] });
+    }
+
+    // Respawn protection is applied last, so an immune snake is still a solid
+    // obstacle that the other snake can die against.
+    snakes.forEach(function (snake, index) {
+      if (snake.immune > 0 && eliminated[index]) eliminated[index] = false;
+    });
+
+    // 5. Award the round, unless the taker died on the same tick.
+    snakes.forEach(function (snake, index) {
+      if (ateGold[index] && !eliminated[index]) {
+        snake.score++;
+        match.gold = null;
+        match.events.push({ type: "gold", player: index });
+        if (snake.score >= match.target) {
+          match.over = true;
+          match.winner = index;
+        } else {
+          match.round++;
+          startRound(match);
+        }
+      } else if (ateGold[index] && eliminated[index]) {
+        match.gold = null;      // consumed but unscored
+      }
+    });
+
+    // 6. Eliminate, respawn, then top the board back up.
+    snakes.forEach(function (snake, index) {
+      if (!eliminated[index]) return;
+      snake.alive = false;
+      snake.deaths++;
+      match.events.push({ type: "eliminated", player: index });
+    });
+
+    if (!match.over) {
+      snakes.forEach(function (snake, index) {
+        if (!snake.alive) respawn(match, index);
+      });
+    }
+
+    snakes.forEach(function (snake) {
+      if (snake.immune > 0) snake.immune--;
+      delete snake.growing;
+    });
+
+    // The gold arrives once someone is ready for it.
+    if (!match.over && !match.gold) {
+      var anyReady = snakes.some(ready);
+      var allReady = snakes.every(ready);
+      if (match.goldOnFirstReady ? anyReady : allReady) {
+        match.gold = placeGold(match);
+        if (match.gold) match.events.push({ type: "goldSpawned" });
+      }
+    }
+
+    return match;
+  }
+
+  // ------------------------------------------------------------------
+  // Bot. Difficulty is which rung of the ladder it uses plus how long it
+  // takes to react, never randomly discarded moves.
+  // ------------------------------------------------------------------
+
+  var RUNGS = { easy: 1, normal: 2, hard: 4 };
+
+  function floodFill(blocked, start) {
+    if (blocked.has(key(start)) || !inBounds(start)) return 0;
+    var seen = new Set([key(start)]);
+    var queue = [start];
+    var count = 0;
+    while (queue.length) {
+      var cell = queue.shift();
+      count++;
+      for (var i = 0; i < DIRECTIONS.length; i++) {
+        var next = { x: cell.x + DIRECTIONS[i].x, y: cell.y + DIRECTIONS[i].y };
+        var k = key(next);
+        if (!inBounds(next) || seen.has(k) || blocked.has(k)) continue;
+        seen.add(k);
+        queue.push(next);
+      }
+    }
+    return count;
+  }
+
+  function reachable(blocked, from, goal) {
+    if (!goal) return false;
+    var seen = new Set([key(from)]);
+    var queue = [from];
+    while (queue.length) {
+      var cell = queue.shift();
+      if (sameCell(cell, goal)) return true;
+      for (var i = 0; i < DIRECTIONS.length; i++) {
+        var next = { x: cell.x + DIRECTIONS[i].x, y: cell.y + DIRECTIONS[i].y };
+        var k = key(next);
+        if (!inBounds(next) || seen.has(k)) continue;
+        if (blocked.has(k) && !sameCell(next, goal)) continue;
+        seen.add(k);
+        queue.push(next);
+      }
+    }
+    return false;
+  }
+
+  function botDecide(match, index) {
+    var snake = match.snakes[index];
+    if (!snake.alive) return null;
+    var other = match.snakes[1 - index];
+    var rung = RUNGS[match.difficulty] || 2;
+
+    // What is it going for? The gold once it is ready, otherwise its food.
+    var target = null;
+    if (match.gold && ready(snake)) {
+      target = match.gold;
+    } else if (snake.food.length) {
+      var head0 = snake.body[0];
+      target = snake.food.reduce(function (best, cell) {
+        return manhattan(cell, head0) < manhattan(best, head0) ? cell : best;
+      });
+    } else if (match.gold) {
+      target = match.gold;
+    }
+
+    var head = snake.body[0];
+    var blocked = occupiedCells(match, { skipTails: true });
+
+    // Cells the opponent's head could occupy next tick. Lethal when the bot
+    // is shorter or equal; an opportunity when it is longer.
+    var contested = new Set();
+    if (other.alive && other.immune <= 0) {
+      DIRECTIONS.forEach(function (d) {
+        var cell = { x: other.body[0].x + d.x, y: other.body[0].y + d.y };
+        if (inBounds(cell)) contested.add(key(cell));
+      });
+    }
+    var winsHeadOn = snake.body.length > other.body.length;
+
+    var options = DIRECTIONS.filter(function (d) {
+      return !(d.x === -snake.direction.x && d.y === -snake.direction.y);
+    }).map(function (d) {
+      return { direction: d, cell: { x: head.x + d.x, y: head.y + d.y } };
+    }).filter(function (option) {
+      return inBounds(option.cell) && !blocked.has(key(option.cell));
+    });
+
+    if (!options.length) return null;   // doomed; keep going and die honestly
+
+    options.forEach(function (option) {
+      var after = new Set(blocked);
+      after.add(key(option.cell));
+
+      option.space = rung >= 2 ? floodFill(after, option.cell) : Infinity;
+      option.tailOpen = rung >= 3
+        ? reachable(after, option.cell, snake.body[snake.body.length - 1])
+        : true;
+      option.risky = rung >= 4 && contested.has(key(option.cell)) && !winsHeadOn;
+      option.aggressive = rung >= 4 && contested.has(key(option.cell)) && winsHeadOn;
+      option.distance = target ? manhattan(option.cell, target) : 0;
+    });
+
+    // Filter in order of how much it costs to give each guarantee up.
+    var safe = options.filter(function (o) { return !o.risky; });
+    if (!safe.length) safe = options;
+
+    var roomy = safe.filter(function (o) { return o.space >= snake.body.length; });
+    if (!roomy.length) roomy = safe;
+
+    var tailSafe = roomy.filter(function (o) { return o.tailOpen; });
+    if (!tailSafe.length) tailSafe = roomy;
+
+    tailSafe.sort(function (a, b) {
+      // Cutting the opponent off is worth more than a step toward food.
+      if (a.aggressive !== b.aggressive) return a.aggressive ? -1 : 1;
+      if (a.distance !== b.distance) return a.distance - b.distance;
+      return b.space - a.space;
+    });
+
+    return tailSafe[0].direction;
+  }
+
+  var REACTION_TICKS = { easy: 2, normal: 1, hard: 0 };
+
+  function driveBot(match, index) {
+    var delay = REACTION_TICKS[match.difficulty];
+    if (delay && match.tick % (delay + 1) !== 0) return;
+    var direction = botDecide(match, index);
+    if (direction) queueTurn(match.snakes[index], direction);
+  }
+
+  // Exposed so the test suite drives the real engine rather than the pixels.
+  window.SnakeDuel = {
+    createMatch: createMatch, stepMatch: stepMatch, queueTurn: queueTurn,
+    botDecide: botDecide, driveBot: driveBot, makeRng: makeRng,
+    findRespawn: findRespawn, placeGold: placeGold, floodFill: floodFill,
+    ready: ready, sameCell: sameCell, manhattan: manhattan,
+    UP: UP, DOWN: DOWN, LEFT: LEFT, RIGHT: RIGHT,
+    WIDTH: WIDTH, HEIGHT: HEIGHT, START_LENGTH: START_LENGTH,
+    OWNED_FOOD: OWNED_FOOD, IMMUNE_TICKS: IMMUNE_TICKS
+  };
+
+  // ------------------------------------------------------------------
+  // Rendering and input.
+  // ------------------------------------------------------------------
+
+  var canvas = document.getElementById("board");
+  if (!canvas) return;                 // headless: rules engine only
+  var ctx = canvas.getContext("2d");
+
+  var els = {
+    round: document.getElementById("round"),
+    overlay: document.getElementById("overlay"),
+    overlayTitle: document.getElementById("overlay-title"),
+    overlayText: document.getElementById("overlay-text"),
+    play: document.getElementById("play"),
+    difficulty: document.getElementById("difficulty"),
+    banner: document.getElementById("banner"),
+    score: [document.getElementById("score0"), document.getElementById("score1")],
+    len: [document.getElementById("len0"), document.getElementById("len1")],
+    pips: [document.getElementById("pips0"), document.getElementById("pips1")]
+  };
+
+  var PALETTE_KEYS = ["panel", "grid", "gold", "p0-head", "p0-body", "p0-food",
+                      "p1-head", "p1-body", "p1-food", "bg", "text", "muted"];
+  var palette = {};
+
+  function readPalette() {
+    var styles = getComputedStyle(document.body);
+    PALETTE_KEYS.forEach(function (name) {
+      palette[name] = styles.getPropertyValue("--" + name).trim();
+    });
+  }
+
+  var cell = 16;
+  var match = null;
+  var running = false;
+  var paused = false;
+  var lastFrame = 0;
+  var accumulator = 0;
+  var difficulty = "normal";
+  var bannerUntil = 0;
+  var KEY_TO_DIRECTION = {
+    ArrowUp: UP, ArrowDown: DOWN, ArrowLeft: LEFT, ArrowRight: RIGHT,
+    w: UP, s: DOWN, a: LEFT, d: RIGHT
+  };
+
+  function delayMs() {
+    return Math.max(MIN_DELAY_MS, BASE_DELAY_MS - (match.round - 1) * ROUND_SPEEDUP_MS);
+  }
+
+  function resize() {
+    readPalette();
+    var width = canvas.parentElement.clientWidth;
+    cell = Math.max(6, Math.floor(width / WIDTH));
+    var cssWidth = cell * WIDTH;
+    var cssHeight = cell * HEIGHT;
+    var ratio = window.devicePixelRatio || 1;
+    canvas.width = Math.round(cssWidth * ratio);
+    canvas.height = Math.round(cssHeight * ratio);
+    canvas.style.width = cssWidth + "px";
+    canvas.style.height = cssHeight + "px";
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    draw();
+    renderStatus();
+  }
+
+  function roundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+
+  function draw() {
+    var w = cell * WIDTH;
+    var h = cell * HEIGHT;
+
+    ctx.fillStyle = palette.panel || "#161923";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = palette.grid || "#1b1f2b";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var x = 1; x < WIDTH; x++) { ctx.moveTo(x * cell + 0.5, 0); ctx.lineTo(x * cell + 0.5, h); }
+    for (var y = 1; y < HEIGHT; y++) { ctx.moveTo(0, y * cell + 0.5); ctx.lineTo(w, y * cell + 0.5); }
+    ctx.stroke();
+
+    if (!match) return;
+
+    // Owned food, tinted to its owner.
+    match.snakes.forEach(function (snake, index) {
+      ctx.fillStyle = palette["p" + index + "-food"];
+      var pad = Math.max(2, cell * 0.3);
+      snake.food.forEach(function (food) {
+        roundedRect(food.x * cell + pad, food.y * cell + pad,
+                    cell - pad * 2, cell - pad * 2, (cell - pad * 2) / 2);
+      });
+    });
+
+    // The contested food: a diamond, so it never relies on colour alone.
+    if (match.gold) {
+      var cx = match.gold.x * cell + cell / 2;
+      var cy = match.gold.y * cell + cell / 2;
+      var r = cell * 0.42;
+      ctx.fillStyle = palette.gold;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    match.snakes.forEach(function (snake, index) {
+      if (!snake.alive) return;
+      var inset = Math.max(1, Math.floor(cell * 0.08));
+      // Respawn protection reads as a dimmed snake.
+      ctx.globalAlpha = snake.immune > 0 ? 0.45 : 1;
+      for (var i = snake.body.length - 1; i >= 0; i--) {
+        var seg = snake.body[i];
+        ctx.fillStyle = i === 0 ? palette["p" + index + "-head"] : palette["p" + index + "-body"];
+        roundedRect(seg.x * cell + inset, seg.y * cell + inset,
+                    cell - inset * 2, cell - inset * 2, Math.max(2, cell * 0.25));
+      }
+      if (cell >= 12) {
+        var head = snake.body[0];
+        var hx = head.x * cell + cell / 2;
+        var hy = head.y * cell + cell / 2;
+        var off = cell * 0.18;
+        var eye = Math.max(1, cell * 0.09);
+        var ax = snake.direction.y === 0 ? 0 : off;
+        var ay = snake.direction.x === 0 ? 0 : off;
+        ctx.fillStyle = palette.bg;
+        ctx.beginPath();
+        ctx.arc(hx + snake.direction.x * off * 0.6 + ax, hy + snake.direction.y * off * 0.6 + ay, eye, 0, Math.PI * 2);
+        ctx.arc(hx + snake.direction.x * off * 0.6 - ax, hy + snake.direction.y * off * 0.6 - ay, eye, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    });
+
+    if (paused) {
+      ctx.fillStyle = "rgba(15, 17, 23, 0.72)";
+      ctx.fillRect(0, 0, w, h);
+      var size = Math.max(13, Math.floor(cell * 0.9));
+      ctx.font = "700 " + size + "px ui-monospace, Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      var plateW = ctx.measureText("PAUSED").width + size * 1.8;
+      ctx.fillStyle = "rgba(15, 17, 23, 0.92)";
+      roundedRect((w - plateW) / 2, (h - size * 2) / 2, plateW, size * 2, 8);
+      ctx.fillStyle = palette.text;
+      ctx.fillText("PAUSED", w / 2, h / 2);
+    }
+  }
+
+  function renderStatus() {
+    if (!match) return;
+    els.round.textContent = "Round " + match.round + " · first to " + match.target;
+    match.snakes.forEach(function (snake, index) {
+      els.score[index].textContent = snake.score;
+      els.len[index].textContent = "len " + snake.body.length;
+      var other = match.snakes[1 - index];
+      els.len[index].className = "len" + (snake.body.length > other.body.length ? " longer" : "");
+
+      var pips = els.pips[index];
+      if (pips.children.length !== OWNED_FOOD) {
+        pips.innerHTML = "";
+        for (var i = 0; i < OWNED_FOOD; i++) pips.appendChild(document.createElement("span"));
+      }
+      for (var j = 0; j < OWNED_FOOD; j++) {
+        pips.children[j].className = "pip" + (j < snake.eaten ? " on" : "");
+      }
+    });
+  }
+
+  function showBanner(text, gold) {
+    els.banner.textContent = text;
+    els.banner.className = "banner" + (gold ? " gold" : "");
+    els.banner.hidden = false;
+    bannerUntil = match.tick + 12;
+  }
+
+  function handleEvents() {
+    match.events.forEach(function (event) {
+      if (event.type === "goldSpawned") showBanner("Gold food — go", true);
+      else if (event.type === "gold") showBanner((event.player === 0 ? "You take" : "Bot takes") + " the round", true);
+      else if (event.type === "eliminated") showBanner(event.player === 0 ? "You are out" : "Bot is out", false);
+    });
+    if (els.banner.hidden === false && match.tick > bannerUntil) els.banner.hidden = true;
+  }
+
+  function endMatch() {
+    running = false;
+    var youWon = match.winner === 0;
+    els.overlayTitle.textContent = youWon ? "You win" : "Bot wins";
+    els.overlayText.textContent = "Final score " + match.snakes[0].score + "–" + match.snakes[1].score +
+      " · " + match.snakes[0].deaths + " deaths to " + match.snakes[1].deaths;
+    els.play.textContent = "Play again";
+    els.overlay.hidden = false;
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!lastFrame) lastFrame = now;
+    var elapsed = now - lastFrame;
+    lastFrame = now;
+    if (!running || paused || !match || match.over) return;
+
+    accumulator += elapsed;
+    if (accumulator > 500) accumulator = 500;
+    var stepped = false;
+    while (accumulator >= delayMs() && !match.over) {
+      accumulator -= delayMs();
+      driveBot(match, 1);
+      stepMatch(match);
+      handleEvents();
+      stepped = true;
+    }
+    if (stepped) { draw(); renderStatus(); }
+    if (match.over) endMatch();
+  }
+
+  function startMatch() {
+    match = createMatch({ seed: (Date.now() % 100000) + 1, difficulty: difficulty });
+    running = true;
+    paused = false;
+    accumulator = 0;
+    lastFrame = 0;
+    els.overlay.hidden = true;
+    els.banner.hidden = true;
+    draw();
+    renderStatus();
+  }
+
+  function togglePause() {
+    if (!running || !match || match.over) return;
+    paused = !paused;
+    accumulator = 0;
+    draw();
+  }
+
+  els.play.addEventListener("click", startMatch);
+
+  els.difficulty.addEventListener("click", function () {
+    var order = ["easy", "normal", "hard"];
+    difficulty = order[(order.indexOf(difficulty) + 1) % order.length];
+    els.difficulty.textContent = "Bot: " + difficulty;
+    if (match) match.difficulty = difficulty;
+  });
+
+  document.addEventListener("keydown", function (event) {
+    var k = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+    if (k === "r") { startMatch(); return; }
+    if (!running || !match || match.over) {
+      if (k === " " || k === "Enter") { event.preventDefault(); startMatch(); }
+      return;
+    }
+    if (k === "p" || k === " ") { event.preventDefault(); togglePause(); return; }
+    var direction = KEY_TO_DIRECTION[k];
+    if (direction) {
+      event.preventDefault();
+      if (!paused && match.snakes[0].alive) queueTurn(match.snakes[0], direction);
+    }
+  });
+
+  var touchStart = null;
+  canvas.addEventListener("touchstart", function (event) {
+    var t = event.changedTouches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+
+  canvas.addEventListener("touchend", function (event) {
+    if (!touchStart || !running || !match) return;
+    var t = event.changedTouches[0];
+    var dx = t.clientX - touchStart.x;
+    var dy = t.clientY - touchStart.y;
+    touchStart = null;
+    if (Math.abs(dx) < 20 && Math.abs(dy) < 20) { togglePause(); return; }
+    if (paused || !match.snakes[0].alive) return;
+    if (Math.abs(dx) > Math.abs(dy)) queueTurn(match.snakes[0], dx > 0 ? RIGHT : LEFT);
+    else queueTurn(match.snakes[0], dy > 0 ? DOWN : UP);
+  }, { passive: true });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && running && !paused) togglePause();
+  });
+
+  window.addEventListener("resize", resize);
+
+  resize();
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
