@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Snake</title>
+<meta name="description" content="A browser port of the terminal Snake game in this repository.">
+<meta name="color-scheme" content="dark">
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #161923;
+    --line: #242938;
+    --text: #e6e9f0;
+    --muted: #8b93a7;
+    --head: #6ee7a8;
+    --body: #35c88a;
+    --food: #f0616d;
+    --grid: #1b1f2b;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.5 ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 16px;
+    /* Keep the board clear of notches and home indicators on phones. */
+    padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    overscroll-behavior: none;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    width: 100%;
+    max-width: 720px;
+  }
+
+  h1 {
+    font-size: 17px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin: 0;
+    font-weight: 600;
+  }
+
+  .scores {
+    margin-left: auto;
+    display: flex;
+    gap: 18px;
+    color: var(--muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .scores b {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  .stage {
+    position: relative;
+    width: 100%;
+    max-width: 720px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--panel);
+    overflow: hidden;
+    /* Stop a swipe on the board from scrolling or zooming the page. */
+    touch-action: none;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+
+  .overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    text-align: center;
+    padding: 20px;
+    background: rgba(15, 17, 23, 0.82);
+    backdrop-filter: blur(2px);
+  }
+
+  .overlay[hidden] { display: none; }
+
+  .overlay h2 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .overlay p {
+    margin: 0;
+    color: var(--muted);
+    max-width: 34ch;
+  }
+
+  button {
+    font: inherit;
+    color: #0f1117;
+    background: var(--head);
+    border: 0;
+    border-radius: 6px;
+    padding: 9px 20px;
+    cursor: pointer;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  button:hover { background: #8af0bd; }
+  button:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+
+  footer {
+    color: var(--muted);
+    font-size: 13px;
+    text-align: center;
+    max-width: 720px;
+  }
+
+  footer a { color: var(--body); }
+
+  kbd {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--text);
+  }
+
+  /* The keyboard hint is meaningless on a touch device, and vice versa. */
+  .touch-only { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    .touch-only { display: inline; }
+    .keys-only { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Snake</h1>
+  <div class="scores">
+    <span>Score <b id="score">0</b></span>
+    <span>Best <b id="best">0</b></span>
+  </div>
+</header>
+
+<div class="stage">
+  <canvas id="board"></canvas>
+  <div class="overlay" id="overlay">
+    <h2 id="overlay-title">Snake</h2>
+    <p id="overlay-text"></p>
+    <button id="overlay-button" type="button">Play</button>
+  </div>
+</div>
+
+<footer>
+  <span class="keys-only"><kbd>&larr;</kbd><kbd>&darr;</kbd><kbd>&uarr;</kbd><kbd>&rarr;</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move &middot; <kbd>P</kbd> pause &middot; <kbd>R</kbd> restart</span>
+  <span class="touch-only">Swipe to steer &middot; tap to pause</span>
+  <br>
+  Browser port of <a href="https://github.com/njohnpaull1999/hyperion/blob/master/games/snake.py">games/snake.py</a>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // Rules mirror games/snake.py so both versions play identically.
+  var BOARD_WIDTH = 30;
+  var BOARD_HEIGHT = 20;
+  var START_DELAY_MS = 120;
+  var MIN_DELAY_MS = 55;
+  var SPEEDUP_PER_FOOD_MS = 3;
+
+  var UP = { x: 0, y: -1 };
+  var DOWN = { x: 0, y: 1 };
+  var LEFT = { x: -1, y: 0 };
+  var RIGHT = { x: 1, y: 0 };
+
+  var KEY_TO_DIRECTION = {
+    ArrowUp: UP, ArrowDown: DOWN, ArrowLeft: LEFT, ArrowRight: RIGHT,
+    w: UP, s: DOWN, a: LEFT, d: RIGHT
+  };
+
+  var canvas = document.getElementById("board");
+  var ctx = canvas.getContext("2d");
+  var scoreEl = document.getElementById("score");
+  var bestEl = document.getElementById("best");
+  var overlay = document.getElementById("overlay");
+  var overlayTitle = document.getElementById("overlay-title");
+  var overlayText = document.getElementById("overlay-text");
+  var overlayButton = document.getElementById("overlay-button");
+
+  var cell = 16;          // canvas pixels per board cell, set by resize()
+  var game = null;
+  var running = false;    // false before the first game and after a loss
+  var lastFrame = 0;
+  var accumulator = 0;
+
+  // localStorage throws in some privacy modes, so never let it break the game.
+  var best = 0;
+  try { best = parseInt(localStorage.getItem("snake.best"), 10) || 0; } catch (e) {}
+  bestEl.textContent = best;
+
+  function key(x, y) { return y * BOARD_WIDTH + x; }
+
+  function createGame() {
+    var body = [];
+    var startX = Math.floor(BOARD_WIDTH / 2);
+    var startY = Math.floor(BOARD_HEIGHT / 2);
+    for (var i = 0; i < 3; i++) body.push({ x: startX - i, y: startY });
+
+    var state = {
+      body: body,
+      occupied: new Set(body.map(function (c) { return key(c.x, c.y); })),
+      direction: RIGHT,
+      // Turns are queued and applied one per tick. Without this, two keys
+      // pressed inside a single frame could combine into a 180 degree turn
+      // (right, then up, then left) and kill the snake instantly.
+      pending: [],
+      score: 0,
+      over: false,
+      won: false,
+      paused: false,
+      food: null
+    };
+    state.food = placeFood(state);
+    return state;
+  }
+
+  function placeFood(state) {
+    var free = [];
+    for (var y = 0; y < BOARD_HEIGHT; y++) {
+      for (var x = 0; x < BOARD_WIDTH; x++) {
+        if (!state.occupied.has(key(x, y))) free.push({ x: x, y: y });
+      }
+    }
+    if (!free.length) return null;
+    return free[Math.floor(Math.random() * free.length)];
+  }
+
+  function queueTurn(direction) {
+    // Compare against the last queued turn, not the current heading, so a
+    // quick two-key sequence resolves the same way it would frame by frame.
+    var last = game.pending.length ? game.pending[game.pending.length - 1] : game.direction;
+    if (direction.x === -last.x && direction.y === -last.y) return;
+    if (direction.x === last.x && direction.y === last.y) return;
+    if (game.pending.length < 2) game.pending.push(direction);
+  }
+
+  function step() {
+    if (game.over || game.paused) return;
+
+    if (game.pending.length) game.direction = game.pending.shift();
+
+    var head = {
+      x: game.body[0].x + game.direction.x,
+      y: game.body[0].y + game.direction.y
+    };
+
+    if (head.x < 0 || head.x >= BOARD_WIDTH || head.y < 0 || head.y >= BOARD_HEIGHT) {
+      return endGame();
+    }
+
+    var eating = game.food && head.x === game.food.x && head.y === game.food.y;
+    var tail = game.body[game.body.length - 1];
+    // The tail vacates this frame unless we grow, so following it is legal.
+    var intoTail = head.x === tail.x && head.y === tail.y;
+    if (game.occupied.has(key(head.x, head.y)) && !(intoTail && !eating)) {
+      return endGame();
+    }
+
+    game.body.unshift(head);
+    game.occupied.add(key(head.x, head.y));
+    if (!eating) {
+      var removed = game.body.pop();
+      game.occupied.delete(key(removed.x, removed.y));
+    } else {
+      game.score++;
+      scoreEl.textContent = game.score;
+      game.food = placeFood(game);
+      if (!game.food) {
+        game.won = true;
+        return endGame();
+      }
+    }
+  }
+
+  function endGame() {
+    game.over = true;
+    running = false;
+    if (game.score > best) {
+      best = game.score;
+      bestEl.textContent = best;
+      try { localStorage.setItem("snake.best", String(best)); } catch (e) {}
+    }
+    showOverlay(
+      game.won ? "You filled the board" : "Game over",
+      "Final score: " + game.score + (game.won ? "" : " · length " + game.body.length),
+      "Play again"
+    );
+  }
+
+  function delayMs() {
+    return Math.max(MIN_DELAY_MS, START_DELAY_MS - game.score * SPEEDUP_PER_FOOD_MS);
+  }
+
+  function showOverlay(title, text, button) {
+    overlayTitle.textContent = title;
+    overlayText.textContent = text;
+    overlayButton.textContent = button;
+    overlay.hidden = false;
+  }
+
+  function resize() {
+    var stageWidth = canvas.parentElement.clientWidth;
+    // Whole-pixel cells keep the grid crisp; 8px floor stops it vanishing.
+    cell = Math.max(8, Math.floor(stageWidth / BOARD_WIDTH));
+
+    var cssWidth = cell * BOARD_WIDTH;
+    var cssHeight = cell * BOARD_HEIGHT;
+    var ratio = window.devicePixelRatio || 1;
+
+    canvas.width = Math.round(cssWidth * ratio);
+    canvas.height = Math.round(cssHeight * ratio);
+    canvas.style.width = cssWidth + "px";
+    canvas.style.height = cssHeight + "px";
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    draw();
+  }
+
+  function roundedRect(x, y, w, h, r) {
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      // Safari before 16 has no roundRect.
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+    }
+    ctx.fill();
+  }
+
+  function draw() {
+    var w = cell * BOARD_WIDTH;
+    var h = cell * BOARD_HEIGHT;
+
+    ctx.fillStyle = getComputedStyle(document.body).getPropertyValue("--panel").trim() || "#161923";
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "#1b1f2b";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var x = 1; x < BOARD_WIDTH; x++) {
+      ctx.moveTo(x * cell + 0.5, 0);
+      ctx.lineTo(x * cell + 0.5, h);
+    }
+    for (var y = 1; y < BOARD_HEIGHT; y++) {
+      ctx.moveTo(0, y * cell + 0.5);
+      ctx.lineTo(w, y * cell + 0.5);
+    }
+    ctx.stroke();
+
+    if (!game) return;
+
+    if (game.food) {
+      ctx.fillStyle = "#f0616d";
+      var pad = Math.max(2, cell * 0.22);
+      roundedRect(
+        game.food.x * cell + pad, game.food.y * cell + pad,
+        cell - pad * 2, cell - pad * 2, (cell - pad * 2) / 2
+      );
+    }
+
+    var inset = Math.max(1, Math.floor(cell * 0.08));
+    for (var i = game.body.length - 1; i >= 0; i--) {
+      var seg = game.body[i];
+      ctx.fillStyle = i === 0 ? "#6ee7a8" : "#35c88a";
+      roundedRect(
+        seg.x * cell + inset, seg.y * cell + inset,
+        cell - inset * 2, cell - inset * 2,
+        Math.max(2, cell * 0.25)
+      );
+    }
+
+    // Eyes, so it is obvious which way the snake is pointing.
+    if (cell >= 12 && !game.over) {
+      var head = game.body[0];
+      var cx = head.x * cell + cell / 2;
+      var cy = head.y * cell + cell / 2;
+      var off = cell * 0.18;
+      var eye = Math.max(1, cell * 0.09);
+      // Offset the pair across the direction of travel.
+      var ax = game.direction.y === 0 ? 0 : off;
+      var ay = game.direction.x === 0 ? 0 : off;
+      var fx = game.direction.x * off * 0.6;
+      var fy = game.direction.y * off * 0.6;
+      ctx.fillStyle = "#0f1117";
+      ctx.beginPath();
+      ctx.arc(cx + fx + ax, cy + fy + ay, eye, 0, Math.PI * 2);
+      ctx.arc(cx + fx - ax, cy + fy - ay, eye, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (game.paused) {
+      ctx.fillStyle = "rgba(15, 17, 23, 0.72)";
+      ctx.fillRect(0, 0, w, h);
+
+      var size = Math.max(13, Math.floor(cell * 0.9));
+      ctx.font = "600 " + size + "px ui-monospace, Menlo, monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      // Plate behind the label, so it stays readable over the snake.
+      var label = "PAUSED";
+      var padX = size * 0.9;
+      var plateW = ctx.measureText(label).width + padX * 2;
+      var plateH = size * 2;
+      ctx.fillStyle = "rgba(15, 17, 23, 0.92)";
+      roundedRect((w - plateW) / 2, (h - plateH) / 2, plateW, plateH, 8);
+      ctx.fillStyle = "#e6e9f0";
+      ctx.fillText(label, w / 2, h / 2);
+    }
+  }
+
+  function frame(now) {
+    requestAnimationFrame(frame);
+    if (!lastFrame) lastFrame = now;
+    var elapsed = now - lastFrame;
+    lastFrame = now;
+
+    if (running && game && !game.paused && !game.over) {
+      accumulator += elapsed;
+      // Clamp so a backgrounded tab does not replay a burst of moves at once.
+      if (accumulator > 500) accumulator = 500;
+      var stepped = false;
+      while (accumulator >= delayMs() && !game.over) {
+        accumulator -= delayMs();
+        step();
+        stepped = true;
+      }
+      if (stepped) draw();
+    }
+  }
+
+  function startGame() {
+    game = createGame();
+    scoreEl.textContent = "0";
+    overlay.hidden = true;
+    running = true;
+    accumulator = 0;
+    lastFrame = 0;
+    draw();
+  }
+
+  function togglePause() {
+    if (!game || game.over || !running) return;
+    game.paused = !game.paused;
+    accumulator = 0;
+    draw();
+  }
+
+  document.addEventListener("keydown", function (event) {
+    var k = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+
+    if (k === "r") { startGame(); return; }
+
+    if (!running) {
+      // Space or enter also starts, so the game is playable without a mouse.
+      if (k === " " || k === "Enter") { event.preventDefault(); startGame(); }
+      return;
+    }
+
+    if (k === "p" || k === " ") { event.preventDefault(); togglePause(); return; }
+
+    var direction = KEY_TO_DIRECTION[k];
+    if (direction) {
+      event.preventDefault();   // stop arrow keys scrolling the page
+      if (!game.paused) queueTurn(direction);
+    }
+  });
+
+  overlayButton.addEventListener("click", startGame);
+
+  // Touch: swipe to steer, tap to pause.
+  var touchStart = null;
+  canvas.addEventListener("touchstart", function (event) {
+    var t = event.changedTouches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+  }, { passive: true });
+
+  canvas.addEventListener("touchend", function (event) {
+    if (!touchStart || !running || !game) return;
+    var t = event.changedTouches[0];
+    var dx = t.clientX - touchStart.x;
+    var dy = t.clientY - touchStart.y;
+    touchStart = null;
+
+    if (Math.abs(dx) < 24 && Math.abs(dy) < 24) { togglePause(); return; }
+    if (game.paused) return;
+    if (Math.abs(dx) > Math.abs(dy)) queueTurn(dx > 0 ? RIGHT : LEFT);
+    else queueTurn(dy > 0 ? DOWN : UP);
+  }, { passive: true });
+
+  // Pause rather than let the snake run on unattended.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden && game && running && !game.paused) togglePause();
+  });
+
+  window.addEventListener("resize", resize);
+
+  resize();
+  showOverlay("Snake", "Eat, grow, and do not hit the walls or yourself.", "Play");
+  requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
